@@ -1,40 +1,45 @@
-from playwright.sync_api import sync_playwright
+import asyncio
+from playwright.async_api import async_playwright
 from urllib.parse import urljoin
 import time
+from prettytable import PrettyTable
+
 
 BASE_URL = "https://lombard-perspectiva.ru"
 
-def main():
-    """Парсинг ссылок на карточки товара с первой страницы каталога с использованием Playwright"""
+async def get_product_links(page):
+    """Получает все ссылки на товары со страницы"""
+    await page.wait_for_selector('a.product-list-item', state="attached")
+    product_links = await page.locator('a.product-list-item').evaluate_all(
+        "elements => elements.map(el => el.getAttribute('href'))"
+    )
+    return [urljoin(BASE_URL, link) for link in product_links]
+
+async def main():
+    """Основная асинхронная функция"""
     full_links = []
     
-    with sync_playwright() as p:
-        # Запускаем браузер (можно использовать 'chromium', 'firefox' или 'webkit')
-        browser = p.chromium.launch(headless=True)  # headless=False для визуального отображения
-        page = browser.new_page()
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)  # headless=False для отладки
+        page = await browser.new_page()
         
         url = f"{BASE_URL}/clocks_today/?page=1"
         
         start_time = time.time()
         
-        # Переходим на страницу
-        page.goto(url, wait_until="domcontentloaded")
+        await page.goto(url, wait_until="domcontentloaded")
+        full_links = await get_product_links(page)
+        table = PrettyTable()
+        table.field_names = (["#", "LINKS"])
+        table.align["LINKS"] = "l"
+        for i, link in enumerate(full_links, 1):
+            table.add_row([i, link])
         
-        # Ждем загрузки элементов (опционально)
-        page.wait_for_selector('a.product-list-item', state="attached")
+        print(f"--- {time.time() - start_time:.2f} seconds ---")
         
-        # Получаем все ссылки на товары
-        product_links = page.locator('a.product-list-item').evaluate_all(
-            "elements => elements.map(el => el.getAttribute('href'))"
-        )
-        
-        full_links = [urljoin(BASE_URL, link) for link in product_links]
-        
-        print("--- %s seconds ---" % (time.time() - start_time))
-        
-        browser.close()
+        await browser.close()
     
-    return full_links
+    return table
 
 if __name__ == "__main__":
-    print(main())
+    print(asyncio.run(main()))
